@@ -10,6 +10,7 @@ type
   public
     class function RemoverAcentos(const pValue: String): String;
     class function RetornarToken: String;
+    class function LimparStringJSON(const AValue: string): string;
   end;
 
 implementation
@@ -19,10 +20,32 @@ uses
 
 { TFuncoes }
 
+class function TFuncoes.LimparStringJSON(const AValue: string): string;
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := '';
+  for I := 1 to Length(AValue) do
+  begin
+    C := AValue[I];
+
+    { Mantém apenas caracteres >= espaço (32). Isso remove quebras de linha, tabs e caracteres de controle (0-31)}
+    if Ord(C) >= 32 then
+    begin
+      {Opcional: Você pode adicionar filtros extras aqui}
+      Result := Result + C;
+    end;
+  end;
+
+  {Remove espaços em branco nas extremidades e possíveis caracteres de controle}
+  Result := Trim(Result);
+end;
+
 class function TFuncoes.RemoverAcentos(const pValue: String): String;
 const
   cComAcento = 'àâêôûãõáéíóúçüÀÂÊÔÛÃÕÁÉÍÓÚÇÜ';
-  cSemAcento = 'aaeeouaoaeioucuAAEEOUAOAEIOUCU';
+  cSemAcento = 'aaeouaoaeioucuAAEOUAOAEIOUCU';
 var
   vIx,
   vPos: Integer;

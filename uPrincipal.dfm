@@ -8,19 +8,34 @@ object frmPrincipal: TfrmPrincipal
   Color = clBtnFace
   Constraints.MaxHeight = 1051
   Constraints.MaxWidth = 1051
-  Constraints.MinHeight = 610
+  Constraints.MinHeight = 600
   Constraints.MinWidth = 610
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -12
   Font.Name = 'Segoe UI'
   Font.Style = []
+  OldCreateOrder = True
   OnDestroy = FormDestroy
+  PixelsPerInch = 96
   TextHeight = 15
   object lblStatus: TLabel
     Left = 356
     Top = 9
-    Width = 293
+    Width = 671
+    Height = 28
+    AutoSize = False
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -20
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object lblNumeroRegistros: TLabel
+    Left = 8
+    Top = 535
+    Width = 671
     Height = 28
     AutoSize = False
     Font.Charset = DEFAULT_CHARSET

@@ -15,6 +15,7 @@ uses
   ,Vcl.StdCtrls
   ,System.JSON
   ,System.Generics.Collections
+  ,System.Threading
   {Classes de negocio}
   ,uMunicipio
   ,uGlobal;
@@ -26,6 +27,7 @@ type
     btnExportarCSV: TButton;
     btnFechar: TButton;
     lblStatus: TLabel;
+    lblNumeroRegistros: TLabel;
     procedure btnCarregarIBGEClick(Sender: TObject);
     procedure btnFecharClick(Sender: TObject);
     procedure btnExportarCSVClick(Sender: TObject);
@@ -39,13 +41,13 @@ type
     FTotalNaoEncontrado: Integer;
     FTotalPopulacaoOK: Integer;
 
-    FMediaRegiaoNorte: Double;
-
+    function GetUF(pJsMunicipio: TJSONObject): String;
+    function GetRegiao(pJsMunicipio: TJSONObject): String;
     function CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipio>;
-    function ObterPopulacao(const pCodMunicipio: Integer): Integer;
     function ObterTotaisPorRegiao(const pRegiao: String): Integer;
     function ObterRegioes: TStringList;
     function RetornarJSONExportacao: TJSONObject;
+    function ProcessarEnvioWS(const pURL, pMetodo: String; pBody: string = ''; pToken: string = ''): TJSONObject;
 
     procedure ExibirDadosIBGE;
 
@@ -66,34 +68,39 @@ uses
 
 procedure TfrmPrincipal.btnCarregarIBGEClick(Sender: TObject);
 var
-  vWS: TWebService;
+  vResponse: TJSONObject;
 begin
-  vWS := TWebService.Create;
-  try
-    vWS.Metodo := 'GET';
-    vWS.URL := 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios';
-    vWS.Enviar;
+  lblStatus.Caption := 'Carregando dados IBGE...';
 
+  vResponse := Self.ProcessarEnvioWS('https://servicodados.ibge.gov.br/api/v3/agregados/6579/variaveis/all?localidades=N6[all]', 'GET');
+  try
     mmDados.Clear;
 
-    lblStatus.Caption := 'Carregando dados IBGE...';
+    FDictMunicipios := Self.CarregarMunicipios(TJSONArray(TJSONObject.ParseJSONValue(vResponse.ToJSON)));
 
-    FDictMunicipios := CarregarMunicipios(TJSONArray(vWS.Response));
-    FTotalMunicipio := FDictMunicipios.Count;
+    FTotalMunicipio := 0;
+    if Assigned(FDictMunicipios) then
+      FTotalMunicipio := FDictMunicipios.Count;
 
     lblStatus.Caption := 'Apresentando dados IBGE...';
+
+    if not Assigned(FDictMunicipios) then
+    begin
+      lblStatus.Caption := 'Dados não encontrados para apresentar.';
+      Exit;
+    end;
 
     ExibirDadosIBGE;
 
     lblStatus.Caption := 'Dados carregados com sucesso.';
   finally
-    FreeAndNil(vWS);
+    if Assigned(vResponse) then
+      FreeAndNil(vResponse);
   end;
 end;
 
 procedure TfrmPrincipal.btnExportarCSVClick(Sender: TObject);
 var
-  vWS: TWebService;
   vJson: TJSONObject;
   vTexto: TStringList;
 begin
@@ -102,20 +109,11 @@ begin
     vTexto.Text := mmDados.Text;
     vTexto.SaveToFile(ExtractFilePath(Application.ExeName) + '\resultado.csv');
 
-    vWS := TWebService.Create;
+    vJson := Self.RetornarJSONExportacao;
     try
-      vJson := RetornarJSONExportacao;
-      try
-        vWS.Metodo := 'POST';
-        vWS.URL    := 'https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit';
-        vWS.Body   := vJson.ToJSON();
-        vWS.Token  := TFuncoes.RetornarToken;
-        vWS.Enviar;
-      finally
-        vJson.Free;
-      end;
+      Self.ProcessarEnvioWS('https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit', 'POST', vJson.ToJSON(), TFuncoes.RetornarToken);
     finally
-      FreeAndNil(vWS);
+      vJson.Free;
     end;
   finally
     FreeAndNil(vTexto);
@@ -128,47 +126,44 @@ begin
 end;
 
 function TfrmPrincipal.CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipio>;
+const
+  cUrl = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios/%d';
+
 var
+  vStr: String;
   vValue: TJSONValue;
-  vJsonObjUF,
-  vJsonObjReg,
-  vJsonObjMesoR,
-  vJsonObjMicroR: TJSONObject;
+  vJsSidra: TJSONArray;
   vMunicipio: TMunicipio;
+  vJsMunicipio: TJSONObject;
 begin
+  Result := TDictionary<Integer, TMunicipio>.Create;
+
   if Assigned(pMunicipioLista) then
   begin
-    Result := TDictionary<Integer, TMunicipio>.Create;
-    for vValue in pMunicipioLista do
-    begin
-      vMunicipio := TMunicipio.Create;
-      try
-        try
-          vJsonObjMicroR := TJSONObject(TJsonObject.ParseJSONValue(vValue.GetValue<TJSONObject>('microrregiao').ToJSON()));
-          vJsonObjMesoR  := TJSONObject(TJsonObject.ParseJSONValue(vJsonObjMicroR.GetValue<TJSONObject>('mesorregiao').ToJSON()));
-          Inc(FTotalMunicipioOK);
-        except
-            try
-              vJsonObjMicroR := TJSONObject(TJsonObject.ParseJSONValue(vValue.GetValue<TJSONObject>('regiao-imediata').ToJSON()));
-              vJsonObjMesoR  := TJSONObject(TJsonObject.ParseJSONValue(vJsonObjMicroR.GetValue<TJSONObject>('regiao-intermediaria').ToJSON()));
-            except
-              vJsonObjMicroR := TJSONObject(TJsonObject.ParseJSONValue(vValue.GetValue<TJSONObject>('regiao-imediata').ToJSON()));
-              vJsonObjMesoR  := TJSONObject(TJsonObject.ParseJSONValue(vJsonObjMicroR.GetValue<TJSONObject>('regiao-intermediaria').ToJSON()));
-            end;
-        end;
-
-        vJsonObjUF     := TJSONObject(TJsonObject.ParseJSONValue(vJsonObjMesoR.GetValue<TJSONObject>('UF').ToJSON()));
-        vJsonObjReg    := TJSONObject(TJsonObject.ParseJSONValue(vJsonObjUF.GetValue<TJSONObject>('regiao').ToJSON()));
-
-        vMunicipio.NomeOficial := TFuncoes.RemoverAcentos(vJsonObjMicroR.GetValue<String>('nome')).ToUpper;
-        vMunicipio.CodigoIBGE  := vValue.GetValue<Integer>('id');
-        vMunicipio.UF          := vJsonObjUF.GetValue<String>('sigla').ToUpper;
-        vMunicipio.Regiao      := vJsonObjReg.GetValue<String>('nome').ToUpper;
-
+    vJsSidra := pMunicipioLista.Items[0].GetValue<TJSONArray>('resultados').Items[0].GetValue<TJSONArray>('series');
+    try
+      for vValue in vJsSidra do
+      begin
+        vMunicipio := TMunicipio.Create;
         try
           Application.ProcessMessages;
-          vMunicipio.Populacao := ObterPopulacao(vMunicipio.CodigoIBGE);
-          Inc(FTotalPopulacaoOK);
+          if (FTotalPopulacaoOK = 5199) then
+            vMunicipio.CodigoIBGE  := vValue.GetValue<TJSONObject>('localidade').GetValue<Integer>('id');
+          vMunicipio.CodigoIBGE  := vValue.GetValue<TJSONObject>('localidade').GetValue<Integer>('id');
+
+          vJsMunicipio := ProcessarEnvioWS(Format(cUrl, [vMunicipio.CodigoIBGE]), 'GET');
+          try
+            vMunicipio.NomeOficial := TFuncoes.RemoverAcentos(vJsMunicipio.GetValue<String>('nome')).ToUpper;
+            vMunicipio.UF          := GetUF(vJsMunicipio);
+            vMunicipio.Regiao      := GetRegiao(vJsMunicipio);
+            vMunicipio.Populacao   := vValue.GetValue<TJSONObject>('serie').GetValue<Integer>('2025');
+
+            Inc(FTotalPopulacaoOK);
+
+            lblNumeroRegistros.Caption := 'Registros incluídos: ' + IntToStr(FTotalPopulacaoOK);
+          finally
+            FreeAndNil(vJsMunicipio);
+          end;
         except
           on E: EWebServiceError do
           begin
@@ -177,12 +172,9 @@ begin
           end;
         end;
         Result.AddOrSetValue(vMunicipio.CodigoIBGE, vMunicipio);
-      finally
-        vJsonObjUF.Free;
-        vJsonObjReg.Free;
-        vJsonObjMesoR.Free;
-        vJsonObjMicroR.Free;
       end;
+    finally
+      vJsSidra.Free;
     end;
   end;
 end;
@@ -190,62 +182,58 @@ end;
 procedure TfrmPrincipal.ExibirDadosIBGE;
 var
   vKey: Integer;
-  vMunicipio: TMunicipio;
 begin
-  mmDados.Lines.Add('municipio_input;populacao_input;municipio_ibge;uf;regiao;id_ibge');
+  mmDados.Lines.Add('Cod IBGE;Nome Oficial;UF;Regiao;Populacao;');
   for vKey in FDictMunicipios.Keys do
-    mmDados.Lines.Add(Format('%s,%d,%d,%s,%s,%d',[FDictMunicipios[vKey].NomeOficial, FDictMunicipios[vKey].Populacao, FDictMunicipios[vKey].CodigoIBGE, FDictMunicipios[vKey].UF, FDictMunicipios[vKey].Regiao, FDictMunicipios[vKey].CodigoIBGE]));
+    mmDados.Lines.Add(Format('%d;%s;%s;%s;%d;', [FDictMunicipios[vKey].CodigoIBGE, FDictMunicipios[vKey].NomeOficial, FDictMunicipios[vKey].UF, FDictMunicipios[vKey].Regiao, FDictMunicipios[vKey].Populacao]));
 end;
 
 procedure TfrmPrincipal.FormDestroy(Sender: TObject);
+var
+  vKey: Integer;
 begin
-  FDictMunicipios.Clear;
-  FreeAndNil(FDictMunicipios);
+  if Assigned(FDictMunicipios) then
+  begin
+    for vKey in FDictMunicipios.Keys do
+      FDictMunicipios[vKey].Free;
+
+    FDictMunicipios.Clear;
+    FreeAndNil(FDictMunicipios);
+  end;
 end;
 
-function TfrmPrincipal.ObterPopulacao(const pCodMunicipio: Integer): Integer;
+function TfrmPrincipal.GetRegiao(pJsMunicipio: TJSONObject): String;
 var
-  vWS: TWebService;
-  vJsonObj: TJSONObject;
-  vJsonResult,
-  vJsonSeries: TJSONArray;
+  vRegiao: TJSONObject;
 begin
-  Result := 0;
-  vWS := TWebService.create;
-  try
-    vWS.URL    := Format('https://servicodados.ibge.gov.br/api/v3/agregados/9514/periodos/2022/variaveis/93?localidades=N6[%d]', [pCodMunicipio]);
-    vWS.Metodo := 'GET';
-    vWS.Enviar;
+  if pJsMunicipio.TryGetValue('microrregiao', vRegiao) then
+    Result := vRegiao
+                .GetValue<TJSONObject>('mesorregiao')
+                .GetValue<TJSONObject>('UF')
+                .GetValue<TJSONObject>('regiao')
+                .GetValue<String>('nome')
+  else
+    Result :=  pJsMunicipio.GetValue<TJSONObject>('regiao-imediata')
+                 .GetValue<TJSONObject>('regiao-intermediaria')
+                 .GetValue<TJSONObject>('UF')
+                 .GetValue<TJSONObject>('regiao')
+                 .GetValue<String>('nome')
+end;
 
-    if Assigned(vWS.Response) then
-    begin
-      //TJSONarray(vWS.Response)[0].tojson
-      vJsonResult := TJSONArray(TJSONObject.ParseJSONValue(TJSONarray(vWS.Response)[0].GetValue<TJSONArray>('resultados').ToJSON()));
-      try
-        if (vJsonResult.Count > 0) then
-        begin
-          vJsonSeries := TJSONArray(TJSONObject.ParseJSONValue(vJsonResult[0].GetValue<TJSONArray>('series').ToJSON()));
-          try
-            if (vJsonSeries.Count > 0) then
-            begin
-              vJsonObj := TJSONObject(TJSONObject.ParseJSONValue(vJsonSeries[0].GetValue<TJSONObject>('serie').ToJSON()));
-              try
-                Result := vJsonObj.getValue('2022').Value.ToInteger;
-              finally
-                vJsonObj.free;
-              end;
-            end;
-          finally
-            vJsonSeries.free;
-          end;
-        end;
-      finally
-        vJSONResult.free;
-      end;
-    end;
-  finally
-    FreeAndNil(vWS);
-  end;
+function TfrmPrincipal.GetUF(pJsMunicipio: TJSONObject): String;
+var
+  vRegiao: TJSONObject;
+begin
+  if pJsMunicipio.TryGetValue('microrregiao', vRegiao) then
+    Result :=  vRegiao
+                 .GetValue<TJSONObject>('mesorregiao')
+                 .GetValue<TJSONObject>('UF')
+                 .GetValue<String>('sigla')
+  else
+    Result :=  pJsMunicipio.GetValue<TJSONObject>('regiao-imediata')
+                 .GetValue<TJSONObject>('regiao-intermediaria')
+                 .GetValue<TJSONObject>('UF')
+                 .GetValue<String>('nome')
 end;
 
 function TfrmPrincipal.ObterRegioes: TStringList;
@@ -266,7 +254,7 @@ begin
 
       for vIx := 0 to vJsonArr.Count -1 do
       begin
-        Result.Add(vJsonArr[vIx].GetValue<String>('nome').ToUpper)
+        Result.Add(vJsonArr.Items[vIx].GetValue<String>('nome').ToUpper)
       end;
     finally
       vJsonArr.free;
@@ -285,6 +273,24 @@ begin
   begin
     if pRegiao.ToUpper.Equals(FDictMunicipios[vKey].Regiao.ToUpper) then
       Result := Result + FDictMunicipios[vKey].Populacao;
+  end;
+end;
+
+function TfrmPrincipal.ProcessarEnvioWS(const pURL, pMetodo: string; pBody: string = ''; pToken: string = ''): TJSONObject;
+var
+  vWS: TWebService;
+begin
+  vWS := TWebService.Create;
+  try
+    vWS.Metodo := pMetodo;
+    vWS.URL    := pURL;
+    vWS.Body   := pBody;
+    vWS.Token  := pToken;
+    vWS.Enviar;
+
+    Result := TJSONObject(TJSONObject.ParseJSONValue(vWS.Response.ToJSON));
+  finally
+    FreeAndNil(vWS);
   end;
 end;
 
