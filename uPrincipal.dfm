@@ -35,7 +35,7 @@ object frmPrincipal: TfrmPrincipal
   object lblNumeroRegistros: TLabel
     Left = 8
     Top = 535
-    Width = 671
+    Width = 393
     Height = 28
     AutoSize = False
     Font.Charset = DEFAULT_CHARSET

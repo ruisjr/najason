@@ -101,7 +101,8 @@ end;
 
 procedure TfrmPrincipal.btnExportarCSVClick(Sender: TObject);
 var
-  vJson: TJSONObject;
+  vJson,
+  vJsAux: TJSONObject;
   vTexto: TStringList;
 begin
   vTexto := TStringList.Create;
@@ -111,8 +112,10 @@ begin
 
     vJson := Self.RetornarJSONExportacao;
     try
-      Self.ProcessarEnvioWS('https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit', 'POST', vJson.ToJSON(), TFuncoes.RetornarToken);
+      vJsAux := Self.ProcessarEnvioWS('https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit', 'POST', vJson.ToJSON(), TFuncoes.RetornarToken);
     finally
+      if Assigned(vJsAux) then
+        FreeAndNil(vJsAux);
       vJson.Free;
     end;
   finally
@@ -130,7 +133,6 @@ const
   cUrl = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios/%d';
 
 var
-  vStr: String;
   vValue: TJSONValue;
   vJsSidra: TJSONArray;
   vMunicipio: TMunicipio;
