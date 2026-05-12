@@ -28,13 +28,19 @@ type
     btnFechar: TButton;
     lblStatus: TLabel;
     lblNumeroRegistros: TLabel;
+    btnPaisDB: TButton;
+    btnEstadosDB: TButton;
+    BtnMunicipioDB: TButton;
     procedure btnCarregarIBGEClick(Sender: TObject);
     procedure btnFecharClick(Sender: TObject);
     procedure btnExportarCSVClick(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure btnPaisDBClick(Sender: TObject);
+    procedure btnEstadosDBClick(Sender: TObject);
+    procedure BtnMunicipioDBClick(Sender: TObject);
   private
     { Private declarations }
-    FDictMunicipios: TDictionary<Integer, TMunicipio>;
+    FDictMunicipios: TDictionary<Integer, TMunicipioDTO>;
     FTotalMunicipio: Integer;
     FTotalMunicipioOK: Integer;
     FTotalErroApi: Integer;
@@ -43,7 +49,7 @@ type
 
     function GetUF(pJsMunicipio: TJSONObject): String;
     function GetRegiao(pJsMunicipio: TJSONObject): String;
-    function CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipio>;
+    function CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipioDTO>;
     function ObterTotaisPorRegiao(const pRegiao: String): Integer;
     function ObterRegioes: TStringList;
     function RetornarJSONExportacao: TJSONObject;
@@ -61,8 +67,16 @@ var
 implementation
 
 uses
-   uWebService
-  ,uTelaProgress;
+   REST.Json
+  ,uWebService
+  ,uTelaProgress
+  ,Core.DataBase.Interfaces
+  ,Core.DataBase.Access
+  ,Entidade.Pais
+  ,Entidade.Estado
+  ,Entidade.Municipio
+  ,Core.Environment
+  ;
 
 {$R *.dfm}
 
@@ -99,6 +113,58 @@ begin
   end;
 end;
 
+procedure TfrmPrincipal.btnEstadosDBClick(Sender: TObject);
+var
+  LIx: Integer;
+  DAO: IDataBaseDAO<TEstado>;
+  LUF: TEstado;
+  LResponse: TJSONObject;
+  LObj: TJSONObject;
+  LArray: TJSONArray;
+begin
+  LResponse := Self.ProcessarEnvioWS('https://servicodados.ibge.gov.br/api/v1/localidades/estados', 'GET');
+  try
+    if not Assigned(LResponse) then
+      Exit;
+
+    DAO := TDataBaseDAO<TEstado>.Create;
+    try
+      Env.Connection.BeginTransaction;
+      try
+        LArray := TJSONArray(TJSONObject.ParseJSONValue(LResponse.ToJSON));
+        try
+          for LIx := LArray.Count-1 downto 0 do
+          begin
+            LUF := TEstado.Create;
+            LObj := TJSONObject(TJSONObject.ParseJSONValue(LArray.Items[LIx].ToJSON));
+            try
+              LUF.Sigla := LObj.GetValue<String>('sigla');
+              LUF.CodIBGE := LObj.GetValue<Integer>('id');
+
+              DAO.Insert(LUF);
+            finally
+              LObj.Free;
+              LUF.Free;
+            end;
+          end;
+        finally
+          LArray.Free;
+        end;
+        Env.Connection.CommitTransaction;
+      except
+        on E: Exception do
+        begin
+          Env.Connection.RollBackTransaction;
+        end;
+      end;
+    finally
+      DAO.FreeMemory;
+    end;
+  finally
+    LResponse.Free;
+  end;
+end;
+
 procedure TfrmPrincipal.btnExportarCSVClick(Sender: TObject);
 var
   vJson,
@@ -112,7 +178,7 @@ begin
 
     vJson := Self.RetornarJSONExportacao;
     try
-      vJsAux := Self.ProcessarEnvioWS('https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit', 'POST', vJson.ToJSON(), TFuncoes.RetornarToken);
+//      vJsAux := Self.ProcessarEnvioWS('https://mynxlubykylncinttggu.functions.supabase.co/ibge-submit', 'POST', vJson.ToJSON(), TFuncoes.RetornarToken);
     finally
       if Assigned(vJsAux) then
         FreeAndNil(vJsAux);
@@ -128,17 +194,127 @@ begin
   Application.Terminate;
 end;
 
-function TfrmPrincipal.CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipio>;
+procedure TfrmPrincipal.btnPaisDBClick(Sender: TObject);
+var
+  LIx: Integer;
+  DAO: IDataBaseDAO<TPais>;
+  LPais: TPais;
+  LResponse: TJSONObject;
+  LObj: TJSONObject;
+  LArray: TJSONArray;
+begin
+  LResponse := Self.ProcessarEnvioWS('https://servicodados.ibge.gov.br/api/v1/localidades/paises', 'GET');
+  try
+    if not Assigned(LResponse) then
+      Exit;
+
+    DAO := TDataBaseDAO<TPais>.Create;
+    try
+      Env.Connection.BeginTransaction;
+      try
+        LArray := TJSONArray(TJSONObject.ParseJSONValue(LResponse.ToJSON));
+        try
+          for LIx := LArray.Count-1 downto 0 do
+          begin
+            LPais := TPais.Create;
+            LObj := TJSONObject(TJSONObject.ParseJSONValue(LArray.Items[LIx].ToJSON));
+            try
+              LPais.Nome := LObj.GetValue<String>('nome');
+              LPais.CodIBGE := LObj.GetValue<TJSONObject>('id').GetValue<Integer>('M49');
+
+              DAO.Insert(LPais);
+            finally
+              LObj.Free;
+              LPais.Free;
+            end;
+          end;
+        finally
+          LArray.Free;
+        end;
+        Env.Connection.CommitTransaction;
+      except
+        on E: Exception do
+        begin
+          Env.Connection.RollBackTransaction;
+        end;
+      end;
+    finally
+      DAO.FreeMemory;
+    end;
+  finally
+    LResponse.Free;
+  end;
+end;
+
+procedure TfrmPrincipal.BtnMunicipioDBClick(Sender: TObject);
+var
+  LIx: Integer;
+  DAO: IDataBaseDAO<TMunicipio>;
+  LMunicipio: TMunicipio;
+  LResponse: TJSONObject;
+  LObj: TJSONObject;
+  LArray: TJSONArray;
+begin
+  LResponse := Self.ProcessarEnvioWS('https://servicodados.ibge.gov.br/api/v1/localidades/municipios', 'GET');
+  try
+    if not Assigned(LResponse) then
+      Exit;
+
+    DAO := TDataBaseDAO<TMunicipio>.Create;
+    try
+      Env.Connection.BeginTransaction;
+      try
+        LArray := TJSONArray(TJSONObject.ParseJSONValue(LResponse.ToJSON));
+        try
+          for LIx := LArray.Count-1 downto 0 do
+          begin
+            LMunicipio := TMunicipio.Create;
+            LObj := TJSONObject(TJSONObject.ParseJSONValue(LArray.Items[LIx].ToJSON));
+            try
+              LMunicipio.Nome := LObj.GetValue<String>('nome').ToUpper;
+              LMunicipio.CodIBGE := LObj.GetValue<Integer>('id');
+              LMunicipio.CodPais := 76;
+              LMunicipio.UF := GetUF(LObj).ToUpper;
+
+              Env.Log.Info('id: '+LMunicipio.CodIBGE.ToString+' | Nome: '+LMunicipio.Nome+' UF: '+LMunicipio.UF+' | Pais: '+LMunicipio.CodPais.ToString);
+
+              DAO.Insert(LMunicipio);
+            finally
+              LObj.Free;
+              LMunicipio.Free;
+            end;
+          end;
+        finally
+          LArray.Free;
+        end;
+        Env.Connection.CommitTransaction;
+        Env.Log.Info('Importação de Municipios realizada com sucesso!');
+      except
+        on E: Exception do
+        begin
+          Env.Log.Error(E.Message);
+          Env.Connection.RollBackTransaction;
+        end;
+      end;
+    finally
+      DAO.FreeMemory;
+    end;
+  finally
+    LResponse.Free;
+  end;
+end;
+
+function TfrmPrincipal.CarregarMunicipios(const pMunicipioLista: TJSONArray): TDictionary<Integer, TMunicipioDTO>;
 const
   cUrl = 'https://servicodados.ibge.gov.br/api/v1/localidades/municipios/%d';
 
 var
   vValue: TJSONValue;
   vJsSidra: TJSONArray;
-  vMunicipio: TMunicipio;
+  vMunicipio: TMunicipioDTO;
   vJsMunicipio: TJSONObject;
 begin
-  Result := TDictionary<Integer, TMunicipio>.Create;
+  Result := TDictionary<Integer, TMunicipioDTO>.Create;
 
   if Assigned(pMunicipioLista) then
   begin
@@ -146,7 +322,7 @@ begin
     try
       for vValue in vJsSidra do
       begin
-        vMunicipio := TMunicipio.Create;
+        vMunicipio := TMunicipioDTO.Create;
         try
           Application.ProcessMessages;
           if (FTotalPopulacaoOK = 5199) then
@@ -235,7 +411,7 @@ begin
     Result :=  pJsMunicipio.GetValue<TJSONObject>('regiao-imediata')
                  .GetValue<TJSONObject>('regiao-intermediaria')
                  .GetValue<TJSONObject>('UF')
-                 .GetValue<String>('nome')
+                 .GetValue<String>('sigla')
 end;
 
 function TfrmPrincipal.ObterRegioes: TStringList;

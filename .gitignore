@@ -1,0 +1,11 @@
+/__history/*.*
+/Fontes/Controllers/*__history*
+/Fontes/Core/*__history*
+/Fontes/Core/DB/*__history*
+/Fontes/Core/DB/Interfaces/*__history*
+/Fontes/Core/Entidades/*__history*
+/Fontes/Core/Services/*__history*
+/Fontes/Entidades/*__history*
+/Fontes/DTOs/*__history*
+/Fontes/Server/*__history*
+/Fontes/Services/*__history*

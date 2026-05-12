@@ -81,4 +81,31 @@ object frmPrincipal: TfrmPrincipal
     TabOrder = 3
     OnClick = btnFecharClick
   end
+  object btnPaisDB: TButton
+    Left = 440
+    Top = 538
+    Width = 113
+    Height = 25
+    Caption = 'Importar Pais (DB)'
+    TabOrder = 4
+    OnClick = btnPaisDBClick
+  end
+  object btnEstadosDB: TButton
+    Left = 559
+    Top = 538
+    Width = 113
+    Height = 25
+    Caption = 'Importar UF (DB)'
+    TabOrder = 5
+    OnClick = btnEstadosDBClick
+  end
+  object BtnMunicipioDB: TButton
+    Left = 678
+    Top = 538
+    Width = 139
+    Height = 25
+    Caption = 'Importar Municipio (DB)'
+    TabOrder = 6
+    OnClick = BtnMunicipioDBClick
+  end
 end

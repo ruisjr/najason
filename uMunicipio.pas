@@ -3,7 +3,7 @@ unit uMunicipio;
 interface
 
 type
-  TMunicipio = class
+  TMunicipioDTO = class
   strict private
     FRegiao: String;
     FNomeOficial: String;
